@@ -1,0 +1,41 @@
+Ka_params = {
+    'G'         :   0.15,
+    'Erev'      :   -80.0,
+    'mK'        :   1.0,
+    'm0'        :   0.2,
+    'Am_alpha'  :   1.0,
+    'Bm_alpha'  :   35.0,
+    'Cm_alpha'  :   10.0,
+    'Am_beta'   :   0.2,
+    'Bm_beta'   :   35.0,
+    'Cm_beta'   :   20.0,
+    'mAlpha'    :   lambda V,A,B,C: A / (1.0 + np.exp(-(V + B) / C)),
+    'mBeta'     :   lambda V,A,B,C: A / (3.3 * np.exp((V + B) / C) + np.exp(-(V + B) / C)),
+    'deltaG'    :   lambda alpha,beta,g: (alpha - g) / beta
+}
+
+Ca_params = {
+    'G'         :   4.0,
+    'Erev'      :   120.0,
+    'mK'        :   2.0,
+    'm0'        :   0.05,
+    'hK'        :   1.0,
+    'h0'        :   0.8,
+    'Am_alpha'  :   0.055,
+    'Bm_alpha'  :   27.0,
+    'Cm_alpha'  :   3.8,
+    'Am_beta'   :   0.94,
+    'Bm_beta'   :   75.0,
+    'Cm_beta'   :   17.0,
+    'Ah_alpha'  :   4.57e-4,
+    'Bh_alpha'  :   13.0,
+    'Ch_alpha'  :   50.0,
+    'Ah_beta'   :   6.5e-3,
+    'Bh_beta'   :   15.0,
+    'Ch_beta'   :   28.0,
+    'mAlpha'    :   lambda V,A,B,C: A * -(V + B) / (np.exp(-(V + B) / C) - 1.0),
+    'mBeta'     :   lambda V,A,B,C: A * np.exp(-(V + B) / C),
+    'hAlpha'    :   lambda V,A,B,C: A * np.exp(-(V + B) / C),
+    'hBeta'     :   lambda V,A,B,C: A / (1.0 + np.exp(-(V + B) / C)),
+    'deltaG'    :   lambda alpha,beta,g: (alpha * (1.0 - g)) - (beta * g)
+}
