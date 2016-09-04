@@ -356,11 +356,6 @@ class Neuron:
         # plot the results of all gates, voltage
         plt.figure()
         for j in xrange(numVals):
-            if trials == 1:
-                r = R[:,j]
-            elif trials > 1:
-                r = R[:,j,:]
-
             plt.subplot(numVals,1,j+1)
             plt.plot(self.timevec,R[:,j],'k') # plot the time series
             plt.title(N[j])
@@ -376,7 +371,7 @@ class Neuron:
         P = self.params
         names = P.keys()
         channels = []
-        current = 'C dV/dT = '
+        current = str(self.C) + ' * dV/dT = '
         for i in xrange(len(names)):
             x = names[i]
             channels.append(x.split('_')[0])
