@@ -29,13 +29,13 @@ class Neuron:
         Ek = -80 mV
         El = -60 mV
 
-        alpha_m = [0.1 * (25 + V)] / [1 - exp((-V - 25) / 10))]
-        beta_m = 4 * exp(-V/18)
+        alpha_m = [0.3 * (25 + V)] / [1 - exp((-V - 25) / 10))]
+        beta_m = 4 * exp(-(V + 65)/18)
 
         alpha_h = 0.07 * exp(-V/20)
         beta_h = 1 / [exp((-V - 30)/10) + 1]
 
-        alpha_n = [0.01 * (V + 55.0)] / [1 - exp((-V - 55.0) / 10)]
+        alpha_n = [0.01 * (V + 55)] / [1 - exp((-V - 55) / 10)]
         beta_n = 0.125 * exp((-V - 65) / 80)
 
     * For details/explanations of these values, see Pospischil et al. 2008, Biol. Cybernetics *
