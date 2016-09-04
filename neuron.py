@@ -1,15 +1,19 @@
 class Neuron:
     """
-    The parent class for developing and simulating biophysical model neurons.
+    The parent class for developing and simulating biophysical model point neurons.
 
     By default, any instantiation of this class will contain hodgkin-huxley biophysical parameters,
-    including fast-activating sodium channel, delayed-rectifying potassium channel, and corresponding m, h, and n gates.
+    e.g. fast-activating sodium channel, delayed-rectifying potassium channel, leak, and corresponding m, h, and n gates.
 
     These parameters are contained in the HH differential equations:
 
         C dV/dt = - [Gna * m^3*h * (V-Ena)] - [Gk * n^4 * (V-Ek)] - [Gl * (V-El)] + I(t) + e(t)
                 I(t) = external input
                 e(t) = gaussian white noise
+                Gion(t) = conductance
+                Eion = reversal potential
+                V(t) = neuron voltage
+                C = neuron capacitance
 
         dm/dt = alpha_m * (1-m) - beta_m * m   <--- sodium activation kinetics
         dh/dt = alpha_h * (1-h) - beta_h * h   <--- sodium inactivation kinetics
@@ -23,7 +27,7 @@ class Neuron:
         Gl = 0.3 mS/cm^2    <--- maximally open
         Ena = 50 mV
         Ek = -80 mV
-        El = -55 mV
+        El = -60 mV
 
         alpha_m = [0.1 * (25 + V)] / [1 - exp((-V - 25) / 10))]
         beta_m = 4 * exp(-V/18)
@@ -34,18 +38,24 @@ class Neuron:
         alpha_n = [0.01 * (V + 55.0)] / [1 - exp((-V - 55.0) / 10)]
         beta_n = 0.125 * exp((-V - 65) / 80)
 
+    * For details/explanations of these values, see Pospischil et al. 2008, Biol. Cybernetics *
+
     The model accepts an instance of the Stim class that can be used for simulation.
     You can easily add or take away stimuli directly through the neuron instance.
 
     To add new currents to the model, use the "add_channel()" method. The channel
-    parameters should be set up in a dictionary with the same parameter and function
-    names as those for the pre-defined Na, K, and Leak parameters.
+    parameters should be set up in a dictionary with the same parameter/function names and
+    structure as those for the pre-defined Na, K, and Leak parameters.
         * See the __init__ method for details on how to construct these parameters *
 
     For each instantiation of the Neuron class, you must supply the following parameters:
         Tmax    =   the maximum time for simulation (in miliseconds)
         Fs      =   the sampling rate (in samples / milisecond...values of 50-100 work well)
         V0      =   the initial resting voltage (typically -65 to -70 mV)
+
+    To simulate the current model, use the "simulate" method, which will loop over all stim
+    protocols contained in the model and output the Voltage and m/h gates for each channel for each stim.
+    These will be stored in "self.Results". You can then view the results with the "plot_results" method.
 
     Writen by Jordan Sorokin, 8/4/2016
     """
@@ -75,20 +85,20 @@ class Neuron:
         self.params = dict()
 
         # add sodium, potassium, and leak channels using the "add_channel" method
-        Leak_params = {
-            'Erev'      :   -55.0,
+        Leak = {
+            'Erev'      :   -60.0,
             'G'         :   0.3
         }
 
-        Na_params = {
+        Na = {
             'G'         :   120.0, # was 2.0
             'Erev'      :   50.0,
             'mK'        :   3.0,
             'm0'        :   0.05,
             'hK'        :   1.0,
             'h0'        :   0.6,
-            'Am_alpha'  :   0.1,
-            'Bm_alpha'  :   40.0,
+            'Am_alpha'  :   0.3,
+            'Bm_alpha'  :   25.0,
             'Cm_alpha'  :   10.0,
             'Am_beta'   :   4.0,
             'Bm_beta'   :   65.0,
@@ -106,9 +116,9 @@ class Neuron:
             'deltaG'    :   lambda alpha,beta,g: (alpha * (1.0 - g)) - (beta * g)
         }
 
-        K_params = {
+        K = {
             'G'         :   36.0, # was 1.44,
-            'Erev'      :   -80.0,
+            'Erev'      :   -77.0,
             'mK'        :   4.0,
             'm0'        :   0.3,
             'Am_alpha'  :   0.01,
@@ -123,9 +133,9 @@ class Neuron:
         }
 
         # add the sodum, potassium, and common parameters to "self.params" dictionary
-        self.add_channel('Leak_params',Leak_params)
-        self.add_channel('Na_params',Na_params)
-        self.add_channel('K_params',K_params)
+        self.add_channel('Leak_params',Leak)
+        self.add_channel('Na_params',Na)
+        self.add_channel('K_params',K)
 
 
     def add_channel(self,chan_name,chan_params):
@@ -201,12 +211,9 @@ class Neuron:
 
     def dCurrent(self,V,G,E,m,h,k,l):
         """
-        Calculate the current for a channel given m,h gates and voltage
+        calculate the current from a channel give current voltage
         """
-        return G * (m**k) + (h**l) * (V-E)
-
-    def dGate(self,alpha,beta,g):
-        return (alpha *  (1-g)) - (beta*g)
+        return G * (m**k) * (h**l) * (V-E)
 
 
     # ode function for extracting dV/dt, and dk/dt gating variables
@@ -218,30 +225,29 @@ class Neuron:
         """
         global np
 
-        # load in common parameters for looping
+        # pull out the relevant variables for looping
         P = self.params.keys();
         varkey = self.Results['Names']
         time = self.timevec
         dt = self.dt
 
-        # get relevant lengths of variables for creating empty vectors and updating
+        # initialize vectors/matrices for storage
         nchan = len(P)
         nvars = len(X)
         ntime = len(time)
         nvars = len(X)
 
-        R = np.zeros((ntime,nvars)) # Will store the results of each loop (voltage, and all gating variables)
-        Ich = [0]*nchan # for calculating the total current contributed by the channels
+        R = np.zeros((ntime,nvars))
+        Ich = [0]*nchan
 
-        # Begin the loop!
+        # LOOP !
         for tind,t in enumerate(time):
             V = X[0] # pull out the voltage
 
-            Iext = self.Iinj(tind,trial) # get the current...if self.stimulus = 0, no current will be applied
+            Iext = self.Iinj(tind,trial) # get the external voltage command
 
             # now loop through the available channels and get the dk/dt and Ik for each
             for i in xrange(nchan):
-
                 # initialize m,h,l,k to = 1, which will be overriden if these gate variables exist in this channel i
                 m = 1; h = 1; l = 1; k = 1;
                 dm = 1; dh = 1;
@@ -262,7 +268,7 @@ class Neuron:
 
                             # now compute the derivative dk/dt for the k-th activating gate
                             m = X[gate_ind] # extract old activation gate value
-                            dm = Ch['deltaG'](alpha,beta,m) * dt# calculate new activation gate value
+                            dm = Ch['deltaG'](alpha,beta,m) * dt
                             k = Ch['mK']
                             X[gate_ind] = m + dm # store the new activation gate value
 
@@ -272,8 +278,7 @@ class Neuron:
 
                             # append this inactivation gate
                             h = X[gate_ind] # take old inactivation gate state
-                            #dh = Ch['deltaG'](alpha,beta,h) * dt # find the new inactivation value
-                            dh = self.dGate(alpha,beta,h) * dt
+                            dh = Ch['deltaG'](alpha,beta,h) * dt
                             l = Ch['hK']
                             X[gate_ind] = h + dh # store the new value
 
@@ -291,6 +296,7 @@ class Neuron:
         return R
     #===========================================================
 
+
     def simulate(self):
         """
         Main runtime for simulating V(t) given current channels and stimulus.
@@ -304,7 +310,7 @@ class Neuron:
         init = [self.V0]
         varkey = ['V']
 
-        # loop for the number of channels in P, take out the initial value and name of that channel
+        # loop for the number of channels in P
         for j in xrange(len(P)):
             Ch = self.params[P[j]]
             if Ch.has_key('mK'):
@@ -314,18 +320,21 @@ class Neuron:
                 init.append(Ch['h0'])
                 varkey.append(P[j]+'-h')
 
-        self.Results = {
-            'Names' : varkey
-        }
+        self.Results = {'Names' : varkey}
 
         # ====================================
         print('Running simulation . . .')
-        # NEED TO IMPLEMENT MULTIPLE TRIAL LOOP FOR SIMULATION
-        R = self.derivate(init,0)
+        trials = self.stimulus.ntrials
+        if trials > 1:
+            self.Results['Values'] = np.zeros((len(self.timevec),len(init),trials))
+            # loop over number of trials, store into 3rd dimension of "Values" for each
+            for s in xrange(trials):
+                R = self.derivate(init,s)
+                self.Results['Values'][:,:,s] = R
+        else:
+            R = self.derivate(init,0)
+            self.Results['Values'] = R
         # ====================================
-
-        # store the simulation results into self.Results dictionary
-        self.Results['Values'] = R
 
 
     def plot_results(self):
@@ -334,17 +343,29 @@ class Neuron:
         """
         global plt
 
+        if not any(self.Results):
+            print('No simulation results found...run "self.simulate()" first!')
+            return
+
         R = self.Results['Values']
         N = self.Results['Names']
 
         numVals = len(N)
+        trials = self.stimulus.ntrials;
 
+        # plot the results of all gates, voltage
         plt.figure()
         for j in xrange(numVals):
-            plt.subplot(numVals,1,j+1)
-            plt.plot(self.timevec,R[:,j],'k')
-            plt.title(N[j])
+            if trials == 1:
+                r = R[:,j]
+            elif trials > 1:
+                r = R[:,j,:]
 
+            plt.subplot(numVals,1,j+1)
+            plt.plot(self.timevec,R[:,j],'k') # plot the time series
+            plt.title(N[j])
+            if not j==numVals:
+                plt.tick_params(axis='x',which='both',bottom='off',top='off',labelbottom='off') # turn of x-axis ticks unless last plot
         plt.show()
 
 

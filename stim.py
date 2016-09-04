@@ -2,18 +2,19 @@ class Stim:
     """
     A class for adding current injections into model neurons or networks.
     Takes in a maximum time (T), sampling rate (Fs), and steady-state current (I0) as initial parameters.
+    Note that these parameters are relative to miliseconds, not seconds. Thus, for a 10 kHz sampling rate,
+    one would use Fs = 100
 
     Once initialized, it is easy to add varying currents at different times using
-    "Stim.addcurrent()", which takes in a start time (t_on), end time (t_off), start value (I_start),
+    "Stim.add_current()", which takes in a start time (t_on), end time (t_off), start value (I_start),
     and optionally an ending value (I_end) plus the number of steps to get there (I_step).
 
-    To visualize the stimulus protocol, you can use "Stim.plotcurrent()", which plots all traces in the current protocol
+    To visualize the stimulus protocol, you can use "Stim.plot_protocol()", which plots all traces in the current protocol
     on top of one another in a new figure.
 
-    By default, the current values are in Picoamps (pA). Thus, no need to input small values (1e-12), as the
-    class will convert your values into picoamps.
+    By default, the current values are in Picoamps (pA). Thus, no need to input small values (1e-12).
 
-    Note that the class assumes numpy, scipy, and matplotlib are all installed on your machine and available in your python path!
+    This class assumes numpy, scipy, and matplotlib are all installed on your machine and available in your python path!
 
     Writen by Jordan Sorokin, 8/4/2016
     """
