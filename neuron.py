@@ -8,12 +8,12 @@ class Neuron:
     These parameters are contained in the HH differential equations:
 
         C dV/dt = - [Gna * m^3*h * (V-Ena)] - [Gk * n^4 * (V-Ek)] - [Gl * (V-El)] + I(t) + e(t)
-                I(t) = external input
-                e(t) = gaussian white noise
-                Gion(t) = conductance
-                Eion = reversal potential
-                V(t) = neuron voltage
-                C = neuron capacitance
+            I(t)    =   external input
+            e(t)    =   gaussian white noise
+            Gion(t) =   conductance
+            Eion    =   reversal potential
+            V(t)    =   neuron voltage
+            C       =   neuron capacitance
 
         dm/dt = alpha_m * (1-m) - beta_m * m   <--- sodium activation kinetics
         dh/dt = alpha_h * (1-h) - beta_h * h   <--- sodium inactivation kinetics
@@ -21,13 +21,13 @@ class Neuron:
 
     with parameters as follows:
 
-        C = 1uF/cm^2
-        Gk = 36 mS/cm^2     <--- maximally open
-        Gna = 120 mS/cm^2   <--- maximally open
-        Gl = 0.3 mS/cm^2    <--- maximally open
-        Ena = 50 mV
-        Ek = -80 mV
-        El = -60 mV
+        C   =   1uF/cm^2
+        Gk  =   36 mS/cm^2    <--- maximally open
+        Gna =   120 mS/cm^2   <--- maximally open
+        Gl  =   0.3 mS/cm^2   <--- maximally open
+        Ena =   50 mV
+        Ek  =   -80 mV
+        El  =   -60 mV
 
         alpha_m = [0.3 * (25 + V)] / [1 - exp((-V - 25) / 10))]
         beta_m = 4 * exp(-(V + 65)/18)
@@ -41,9 +41,9 @@ class Neuron:
     * For details/explanations of these values, see Pospischil et al. 2008, Biol. Cybernetics *
 
     The model accepts an instance of the Stim class that can be used for simulation.
-    You can easily add or take away stimuli directly through the neuron instance.
+    You can easily add or remove stimuli directly through the neuron instance.
 
-    To add new currents to the model, use the "add_channel()" method. The channel
+    To add new ionic currents to the model, use the "add_channel()" method. The channel
     parameters should be set up in a dictionary with the same parameter/function names and
     structure as those for the pre-defined Na, K, and Leak parameters.
         * See the __init__ method for details on how to construct these parameters *
@@ -55,7 +55,7 @@ class Neuron:
 
     To simulate the current model, use the "simulate" method, which will loop over all stim
     protocols contained in the model and output the Voltage and m/h gates for each channel for each stim.
-    These will be stored in "self.Results". You can then view the results with the "plot_results" method.
+    These will be stored in the "Results" attribute. You can then view the results with the "plot_results" method.
 
     Writen by Jordan Sorokin, 8/4/2016
     """
@@ -186,7 +186,7 @@ class Neuron:
         """
         Add zero-mean gaussian white noise with variance sigma.
         """
-        self.noise = sigma # converted to mV
+        self.noise = sigma
 
 
     def Iinj(self,t,trial):
@@ -218,7 +218,7 @@ class Neuron:
 
     # ode function for extracting dV/dt, and dk/dt gating variables
     #===========================================================
-    def derivate(self,X,trial):
+    def _derivate(self,X,trial):
         """
         For each k-th gating variable, calculate dk/dt
         Then find dV/dt by summing the currents from each channel, the external current, and any noise terms
@@ -235,7 +235,6 @@ class Neuron:
         nchan = len(P)
         nvars = len(X)
         ntime = len(time)
-        nvars = len(X)
 
         R = np.zeros((ntime,nvars))
         Ich = [0]*nchan
@@ -329,10 +328,10 @@ class Neuron:
             self.Results['Values'] = np.zeros((len(self.timevec),len(init),trials))
             # loop over number of trials, store into 3rd dimension of "Values" for each
             for s in xrange(trials):
-                R = self.derivate(init,s)
+                R = self._derivate(init,s)
                 self.Results['Values'][:,:,s] = R
         else:
-            R = self.derivate(init,0)
+            R = self._derivate(init,0)
             self.Results['Values'] = R
         # ====================================
 
@@ -364,24 +363,26 @@ class Neuron:
         plt.show()
 
 
-    def _print(self):
+    def print_model(self):
         """
         Print the equations and channels currently used in the model
         """
         P = self.params
         names = P.keys()
-        channels = []
         current = str(self.C) + ' * dV/dT = '
         for i in xrange(len(names)):
             x = names[i]
-            channels.append(x.split('_')[0])
+            ch = x.split('_')[0]
             Erev = str(P[x]['Erev'])
             if P[x].has_key('m0'):
                 y = 'm' + '^' + str(int(P[x]['mK']))
             if P[x].has_key('h0'):
                 y += 'h' + '^' + str(int(P[x]['hK']))
 
-            current += ('[g' + channels[i] + ' * ' + y + ' * (V(t) - ' + Erev + ')] + ')
+            current += ('[g' + ch + ' * ' + y + ' * (V(t) - ' + Erev + ')] + ')
+
+        if not self.stimulus == 0:
+            current += 'I(t)'
 
         print('Current model:')
-        print(current + 'I(t)')
+        print(current)
