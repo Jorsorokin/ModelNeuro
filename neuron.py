@@ -1,4 +1,4 @@
-class Neuron:
+class Neuron():
     """
     The parent class for developing and simulating biophysical model point neurons.
 
@@ -49,7 +49,7 @@ class Neuron:
         * See the __init__ method for details on how to construct these parameters *
 
     For each instantiation of the Neuron class, you must supply the following parameters:
-        Tmax    =   the maximum time for simulation (in miliseconds)
+        T       =   the maximum time for simulation (in miliseconds)
         Fs      =   the sampling rate (in samples / milisecond...values of 50-100 work well)
         V0      =   the initial resting voltage (typically -65 to -70 mV)
 
@@ -64,6 +64,7 @@ class Neuron:
     import numpy as np
     import scipy as sp
     import matplotlib.pyplot as plt
+    from numba import jit
 
     global np
     global sp
@@ -71,7 +72,7 @@ class Neuron:
 
     # initialize
     def __init__(self, T, Fs, V0):
-        global np
+        global np, jit
 
         # set up common parameters
         self.Tmax = float(T)
@@ -189,6 +190,7 @@ class Neuron:
         self.noise = sigma
 
 
+    @jit(cache=True)
     def Iinj(self,t,trial):
         """
         Pull out the injected current value from self.stimulus.Itot
@@ -209,13 +211,6 @@ class Neuron:
         return Iext
 
 
-    def dCurrent(self,V,G,E,m,h,k,l):
-        """
-        calculate the current from a channel give current voltage
-        """
-        return G * (m**k) * (h**l) * (V-E)
-
-
     # ode function for extracting dV/dt, and dk/dt gating variables
     #===========================================================
     def _derivate(self,X,trial):
@@ -226,23 +221,36 @@ class Neuron:
         global np
 
         # pull out the relevant variables for looping
-        P = self.params.keys();
+        params = self.params
+        P = params.keys()
         varkey = self.Results['Names']
-        time = self.timevec
-        dt = self.dt
 
         # initialize vectors/matrices for storage
         nchan = len(P)
         nvars = len(X)
-        ntime = len(time)
+        ntime = len(self.timevec)
+        C = self.C
+        dt = self.dt
 
         R = np.zeros((ntime,nvars))
         Ich = [0]*nchan
+        
+        #==========================
+        R = self._derivateloop(R,X,P,params,varkey,ntime,nchan,nvars,C,dt,Ich,trial)
+        
+        return R
+        #==========================
+
+    #@jit
+    def _derivateloop(self,R,X,P,Params,varkey,ntime,nchan,nvars,C,dt,Ich,trial):
+        """ Grunt-work of the _derivate method belongs here. It performs the tripple-nested 
+        for-loop for updating voltages given the equations specified in the main Neuron-class 
+        comments. Putting it in its own function allows for numba-optimized JIT
+        """
 
         # LOOP !
-        for tind,t in enumerate(time):
+        for tind in xrange(ntime):
             V = X[0] # pull out the voltage
-
             Iext = self.Iinj(tind,trial) # get the external voltage command
 
             # now loop through the available channels and get the dk/dt and Ik for each
@@ -252,7 +260,7 @@ class Neuron:
                 dm = 1; dh = 1;
 
                 # extract the channel i using the name from P
-                Ch = self.params[P[i]]
+                Ch = Params[P[i]]
                 allgates = [(ind,x) for ind,x in enumerate(varkey) if P[i] in x] # pull out the names and indices of the gating variables for channel i
 
                 # loop over any gate variables that exist in this channel, update the new gating values
@@ -267,9 +275,8 @@ class Neuron:
 
                             # now compute the derivative dk/dt for the k-th activating gate
                             m = X[gate_ind] # extract old activation gate value
-                            dm = Ch['deltaG'](alpha,beta,m) * dt
                             k = Ch['mK']
-                            X[gate_ind] = m + dm # store the new activation gate value
+                            X[gate_ind] = m + Ch['deltaG'](alpha,beta,m) * dt # store the new activation gate value
 
                         if gate_name == 'h':
                             alpha = Ch['hAlpha'](V,Ch['Ah_alpha'],Ch['Bh_alpha'],Ch['Ch_alpha'])
@@ -277,25 +284,21 @@ class Neuron:
 
                             # append this inactivation gate
                             h = X[gate_ind] # take old inactivation gate state
-                            dh = Ch['deltaG'](alpha,beta,h) * dt
                             l = Ch['hK']
-                            X[gate_ind] = h + dh # store the new value
+                            X[gate_ind] = h + Ch['deltaG'](alpha,beta,h) * dt # store the new value
 
                 # now calculate the current for this channel
-                dI = self.dCurrent(V, Ch['G'], Ch['Erev'], m, h, k, l)
-                Ich[i] = dI # find the current for this channel using the old activation/inactivation values
+                Ich[i] = Ch['G'] * (m**k) * (h**l) * (V-Ch['Erev'])
 
             # finally, calculate the new dV/dt
-            dV = (Iext - sum(Ich)) / self.C * dt
-            X[0] = V + dV
-
-            # store into the Results matrix "R"
+            X[0] = V + ((Iext - sum(Ich)) / C * dt)
             R[tind,:] = X
 
         return R
     #===========================================================
+    
 
-
+    @jit
     def simulate(self):
         """
         Main runtime for simulating V(t) given current channels and stimulus.
@@ -336,6 +339,7 @@ class Neuron:
         # ====================================
 
 
+    @jit
     def plot_results(self):
         """
         Plots the results from running "self.simulate()" in new figures.
@@ -346,18 +350,15 @@ class Neuron:
             print('No simulation results found...run "self.simulate()" first!')
             return
 
-        R = self.Results['Values']
-        N = self.Results['Names']
-
-        numVals = len(N)
+        numVals = len(self.Results['Names'])
         trials = self.stimulus.ntrials;
 
         # plot the results of all gates, voltage
         plt.figure()
         for j in xrange(numVals):
             plt.subplot(numVals,1,j+1)
-            plt.plot(self.timevec,R[:,j],'k') # plot the time series
-            plt.title(N[j])
+            plt.plot(self.timevec,self.Results['Values'][:,j],'k') # plot the time series
+            plt.title(self.Results['Names'][j])
             if not j==numVals:
                 plt.tick_params(axis='x',which='both',bottom='off',top='off',labelbottom='off') # turn of x-axis ticks unless last plot
         plt.show()
